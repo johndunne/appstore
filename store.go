@@ -33,6 +33,7 @@ const (
 	PathRequestTestNotification             = "/inApps/v1/notifications/test"
 	PathGetTestNotificationStatus           = "/inApps/v1/notifications/test/{testNotificationToken}"
 	PathSetAppAccountToken                  = "/inApps/v1/transactions/{originalTransactionId}/appAccountToken"
+	PathGetAppTransactionInfo               = "/inApps/v1/transactions/appTransactions/{transactionId}"
 )
 
 type StoreConfig struct {
@@ -148,6 +149,28 @@ func (c *StoreClient) GetTransactionInfo(ctx context.Context, transactionId stri
 		return nil, err
 	}
 	return rsp, nil
+}
+
+// GetAppTransactionInfo https://developer.apple.com/documentation/appstoreserverapi/get-app-transaction-info
+func (c *StoreClient) GetAppTransactionInfo(ctx context.Context, transactionId string) (rsp *AppTransactionInfoResponse, err error) {
+	URL := c.hostUrl + PathGetAppTransactionInfo
+	URL = strings.Replace(URL, "{transactionId}", transactionId, -1)
+
+	statusCode, body, err := c.Do(ctx, http.MethodGet, URL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("appstore api: %v return status code %v", URL, statusCode)
+	}
+
+	err = json.Unmarshal(body, &rsp)
+	if err != nil {
+		return nil, err
+	}
+
+	return
 }
 
 // LookupOrderID https://developer.apple.com/documentation/appstoreserverapi/look_up_order_id
