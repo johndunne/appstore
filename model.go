@@ -1,7 +1,7 @@
 package appstore
 
 import (
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // OrderLookupResponse https://developer.apple.com/documentation/appstoreserverapi/orderlookupresponse
@@ -87,24 +87,55 @@ type ConsumptionRequestBody struct {
 
 // JWSRenewalInfoDecodedPayload https://developer.apple.com/documentation/appstoreserverapi/jwsrenewalinfodecodedpayload
 type JWSRenewalInfoDecodedPayload struct {
-	AutoRenewProductId          string      `json:"autoRenewProductId"`
-	AutoRenewStatus             int32       `json:"autoRenewStatus"`
-	Environment                 Environment `json:"environment"`
-	ExpirationIntent            int32       `json:"expirationIntent"`
-	GracePeriodExpiresDate      int64       `json:"gracePeriodExpiresDate"`
-	IsInBillingRetryPeriod      *bool       `json:"isInBillingRetryPeriod"`
-	OfferIdentifier             string      `json:"offerIdentifier"`
-	OfferType                   int32       `json:"offerType"`
-	OriginalTransactionId       string      `json:"originalTransactionId"`
-	PriceIncreaseStatus         *int32      `json:"priceIncreaseStatus"`
-	ProductId                   string      `json:"productId"`
-	RecentSubscriptionStartDate int64       `json:"recentSubscriptionStartDate"`
-	RenewalDate                 int64       `json:"renewalDate"`
-	SignedDate                  int64       `json:"signedDate"`
+	AppAccountToken             string            `json:"appAccountToken,omitempty"`
+	AppTransactionId            string            `json:"appTransactionId,omitempty"`
+	AutoRenewProductId          string            `json:"autoRenewProductId"`
+	AutoRenewStatus             int32             `json:"autoRenewStatus"`
+	Environment                 Environment       `json:"environment"`
+	ExpirationIntent            int32             `json:"expirationIntent"`
+	GracePeriodExpiresDate      int64             `json:"gracePeriodExpiresDate"`
+	IsInBillingRetryPeriod      *bool             `json:"isInBillingRetryPeriod"`
+	OfferIdentifier             string            `json:"offerIdentifier"`
+	OfferType                   int32             `json:"offerType"`
+	OfferPeriod                 string            `json:"offerPeriod"`
+	OriginalTransactionId       string            `json:"originalTransactionId"`
+	PriceIncreaseStatus         *int32            `json:"priceIncreaseStatus"`
+	ProductId                   string            `json:"productId"`
+	RecentSubscriptionStartDate int64             `json:"recentSubscriptionStartDate"`
+	RenewalDate                 int64             `json:"renewalDate"`
+	SignedDate                  int64             `json:"signedDate"`
+	RenewalPrice                int64             `json:"renewalPrice,omitempty"`
+	Currency                    string            `json:"currency,omitempty"`
+	OfferDiscountType           OfferDiscountType `json:"offerDiscountType,omitempty"`
+	EligibleWinBackOfferIds     []string          `json:"eligibleWinBackOfferIds,omitempty"`
 }
 
 func (J JWSRenewalInfoDecodedPayload) Valid() error {
 	return nil
+}
+
+func (J JWSRenewalInfoDecodedPayload) GetAudience() (jwt.ClaimStrings, error) {
+	return nil, nil
+}
+
+func (J JWSRenewalInfoDecodedPayload) GetExpirationTime() (*jwt.NumericDate, error) {
+	return nil, nil
+}
+
+func (J JWSRenewalInfoDecodedPayload) GetIssuedAt() (*jwt.NumericDate, error) {
+	return nil, nil
+}
+
+func (J JWSRenewalInfoDecodedPayload) GetIssuer() (string, error) {
+	return "", nil
+}
+
+func (J JWSRenewalInfoDecodedPayload) GetNotBefore() (*jwt.NumericDate, error) {
+	return nil, nil
+}
+
+func (J JWSRenewalInfoDecodedPayload) GetSubject() (string, error) {
+	return "", nil
 }
 
 // JWSDecodedHeader https://developer.apple.com/documentation/appstoreserverapi/jwsdecodedheader
@@ -143,6 +174,7 @@ const (
 
 // JWSTransaction https://developer.apple.com/documentation/appstoreserverapi/jwstransaction
 type JWSTransaction struct {
+	AppTransactionId            string            `json:"appTransactionId,omitempty"`
 	TransactionID               string            `json:"transactionId,omitempty"`
 	OriginalTransactionId       string            `json:"originalTransactionId,omitempty"`
 	WebOrderLineItemId          string            `json:"webOrderLineItemId,omitempty"`
@@ -158,6 +190,7 @@ type JWSTransaction struct {
 	InAppOwnershipType          string            `json:"inAppOwnershipType,omitempty"`
 	SignedDate                  int64             `json:"signedDate,omitempty"`
 	OfferType                   int32             `json:"offerType,omitempty"`
+	OfferPeriod                 string            `json:"offerPeriod,omitempty"`
 	OfferIdentifier             string            `json:"offerIdentifier,omitempty"`
 	RevocationDate              int64             `json:"revocationDate,omitempty"`
 	RevocationReason            *int32            `json:"revocationReason,omitempty"`
@@ -173,6 +206,29 @@ type JWSTransaction struct {
 
 func (J JWSTransaction) Valid() error {
 	return nil
+}
+func (J JWSTransaction) GetAudience() (jwt.ClaimStrings, error) {
+	return nil, nil
+}
+
+func (J JWSTransaction) GetExpirationTime() (*jwt.NumericDate, error) {
+	return nil, nil
+}
+
+func (J JWSTransaction) GetIssuedAt() (*jwt.NumericDate, error) {
+	return nil, nil
+}
+
+func (J JWSTransaction) GetIssuer() (string, error) {
+	return "", nil
+}
+
+func (J JWSTransaction) GetNotBefore() (*jwt.NumericDate, error) {
+	return nil, nil
+}
+
+func (J JWSTransaction) GetSubject() (string, error) {
+	return "", nil
 }
 
 // https://developer.apple.com/documentation/appstoreserverapi/extendreasoncode
@@ -208,8 +264,8 @@ type NotificationHistoryRequest struct {
 	OriginalTransactionId string             `json:"originalTransactionId,omitempty"`
 	NotificationType      NotificationTypeV2 `json:"notificationType,omitempty"`
 	NotificationSubtype   SubtypeV2          `json:"notificationSubtype,omitempty"`
-	OnlyFailures          bool               `json:"onlyFailures"`
-	TransactionId         string             `json:"transactionId"`
+	OnlyFailures          bool               `json:"onlyFailures,omitempty"`
+	TransactionId         string             `json:"transactionId,omitempty"`
 }
 
 type NotificationTypeV2 string
@@ -231,6 +287,11 @@ const (
 	NotificationTypeV2RenewalExtended        NotificationTypeV2 = "RENEWAL_EXTENDED"
 	NotificationTypeV2Revoke                 NotificationTypeV2 = "REVOKE"
 	NotificationTypeV2Subscribed             NotificationTypeV2 = "SUBSCRIBED"
+	NotificationTypeV2OneTimeCharge          NotificationTypeV2 = "ONE_TIME_CHARGE"
+	NotificationTypeV2RefundReversed         NotificationTypeV2 = "REFUND_REVERSED"
+	NotificationTypeV2ExternalPurchaseToken  NotificationTypeV2 = "EXTERNAL_PURCHASE_TOKEN"
+	NotificationTypeV2RenewalExtension       NotificationTypeV2 = "RENEWAL_EXTENSION"
+	NotificationTypeV2Test                   NotificationTypeV2 = "TEST"
 )
 
 // SubtypeV2 is type
@@ -295,6 +356,11 @@ type SendTestNotificationResponse struct {
 	TestNotificationToken string `json:"testNotificationToken"`
 }
 
+// Notification body https://developer.apple.com/documentation/appstoreservernotifications/responsebodyv2
+type NotificationV2 struct {
+	SignedPayload string `json:"signedPayload"`
+}
+
 // Notification signed payload
 type NotificationPayload struct {
 	jwt.RegisteredClaims
@@ -347,4 +413,24 @@ type RenewalInfo struct {
 	IsInBillingRetryPeriod *bool  `json:"isInBillingRetryPeriod"`
 	SignedDate             int    `json:"signedDate"`
 	Environment            string `json:"environment"`
+}
+
+type UpdateAppAccountTokenRequest struct {
+	AppAccountToken string `json:"appAccountToken"`
+}
+
+type AppTransactionInfoResponse struct {
+	SignedAppTransactionInfo string `json:"signedAppTransactionInfo"`
+}
+
+type JWSAppTransactionDecodedPayload struct {
+	AppAppleId                 int64       `json:"appAppleId"`
+	AppTransactionId           string      `json:"appTransactionId"`
+	BundleId                   string      `json:"bundleId"`
+	OriginalApplicationVersion string      `json:"originalApplicationVersion"`
+	OriginalPlatform           string      `json:"originalPlatform"`
+	OriginalPurchaseDate       int64       `json:"originalPurchaseDate"`
+	PreorderDate               int64       `json:"preorderDate,omitempty"`
+	ReceiptCreationDate        int64       `json:"receiptCreationDate"`
+	ReceiptType                Environment `json:"receiptType"`
 }

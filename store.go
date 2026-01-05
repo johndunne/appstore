@@ -3,7 +3,6 @@ package appstore
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -14,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -23,7 +22,7 @@ const (
 
 	PathTransactionInfo                     = "/inApps/v1/transactions/{transactionId}"
 	PathLookUp                              = "/inApps/v1/lookup/{orderId}"
-	PathTransactionHistory                  = "/inApps/v1/history/{originalTransactionId}"
+	PathTransactionHistory                  = "/inApps/v2/history/{originalTransactionId}"
 	PathRefundHistory                       = "/inApps/v2/refund/lookup/{originalTransactionId}"
 	PathGetALLSubscriptionStatus            = "/inApps/v1/subscriptions/{originalTransactionId}"
 	PathConsumptionInfo                     = "/inApps/v1/transactions/consumption/{originalTransactionId}"
@@ -33,16 +32,20 @@ const (
 	PathGetNotificationHistory              = "/inApps/v1/notifications/history"
 	PathRequestTestNotification             = "/inApps/v1/notifications/test"
 	PathGetTestNotificationStatus           = "/inApps/v1/notifications/test/{testNotificationToken}"
+	PathSetAppAccountToken                  = "/inApps/v1/transactions/{originalTransactionId}/appAccountToken"
+	PathGetAppTransactionInfo               = "/inApps/v1/transactions/appTransactions/{transactionId}"
 )
 
 type StoreConfig struct {
-	KeyContent         []byte       // Loads a .p8 certificate
-	KeyID              string       // Your private key ID from App Store Connect (Ex: 2X9R4HXF34)
-	BundleID           string       // Your app’s bundle ID
-	Issuer             string       // Your issuer ID from the Keys page in App Store Connect (Ex: "57246542-96fe-1a63-e053-0824d011072a")
-	Sandbox            bool         // default is Production
-	TokenIssuedAtFunc  func() int64 // The token’s creation time func. Default is current timestamp.
-	TokenExpiredAtFunc func() int64 // The token’s expiration time func. Default is one hour later.
+	KeyContent         []byte         // Loads a .p8 certificate
+	KeyID              string         // Your private key ID from App Store Connect (Ex: 2X9R4HXF34)
+	BundleID           string         // Your app’s bundle ID
+	Issuer             string         // Your issuer ID from the Keys page in App Store Connect (Ex: "57246542-96fe-1a63-e053-0824d011072a")
+	Audience           string         // Your audience (aud) for generating the token (some Apple APIs require a specific aud, such as Sign In with Apple ID).
+	Sandbox            bool           // default is Production
+	TokenIssuedAtFunc  func() int64   // The token’s creation time func. Default is current timestamp.
+	TokenExpiredAtFunc func() int64   // The token’s expiration time func. Default is one hour later.
+	TrustedCertPool    *x509.CertPool // The pool of trusted root certificates. Default is a pool containing only Apple Root CA - G3.
 }
 
 type StoreClient struct {
@@ -63,7 +66,7 @@ func NewStoreClient(config *StoreConfig) *StoreClient {
 
 	client := &StoreClient{
 		Token: token,
-		cert:  &Cert{},
+		cert:  newCert(config.TrustedCertPool),
 		httpCli: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -83,7 +86,7 @@ func NewStoreClientWithHTTPClient(config *StoreConfig, httpClient HTTPClient) *S
 
 	client := &StoreClient{
 		Token:   token,
-		cert:    &Cert{},
+		cert:    newCert(config.TrustedCertPool),
 		httpCli: httpClient,
 		hostUrl: hostUrl,
 	}
@@ -146,6 +149,28 @@ func (c *StoreClient) GetTransactionInfo(ctx context.Context, transactionId stri
 		return nil, err
 	}
 	return rsp, nil
+}
+
+// GetAppTransactionInfo https://developer.apple.com/documentation/appstoreserverapi/get-app-transaction-info
+func (c *StoreClient) GetAppTransactionInfo(ctx context.Context, transactionId string) (rsp *AppTransactionInfoResponse, err error) {
+	URL := c.hostUrl + PathGetAppTransactionInfo
+	URL = strings.Replace(URL, "{transactionId}", transactionId, -1)
+
+	statusCode, body, err := c.Do(ctx, http.MethodGet, URL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("appstore api: %v return status code %v", URL, statusCode)
+	}
+
+	err = json.Unmarshal(body, &rsp)
+	if err != nil {
+		return nil, err
+	}
+
+	return
 }
 
 // LookupOrderID https://developer.apple.com/documentation/appstoreserverapi/look_up_order_id
@@ -338,13 +363,6 @@ func (c *StoreClient) GetSubscriptionRenewalDataStatus(ctx context.Context, prod
 // GetNotificationHistory https://developer.apple.com/documentation/appstoreserverapi/get_notification_history
 func (c *StoreClient) GetNotificationHistory(ctx context.Context, body NotificationHistoryRequest) (responses []NotificationHistoryResponseItem, err error) {
 	baseURL := c.hostUrl + PathGetNotificationHistory
-
-	bodyBuf := new(bytes.Buffer)
-	err = json.NewEncoder(bodyBuf).Encode(body)
-	if err != nil {
-		return nil, err
-	}
-
 	URL := baseURL
 
 	for {
@@ -357,8 +375,8 @@ func (c *StoreClient) GetNotificationHistory(ctx context.Context, body Notificat
 		rsp := NotificationHistoryResponses{}
 		rsp.NotificationHistory = make([]NotificationHistoryResponseItem, 0)
 
+		client = SetRequestBodyJSON(client, body)
 		client = SetRequest(ctx, client, http.MethodPost, URL)
-		client = SetRequestBodyJSON(client, bodyBuf)
 		client = SetResponseBodyHandler(client, json.Unmarshal, &rsp)
 		_, err = client.Do(nil)
 		if apiErr.errorCode != 0 {
@@ -400,6 +418,24 @@ func (c *StoreClient) GetTestNotificationStatus(ctx context.Context, testNotific
 	return c.Do(ctx, http.MethodGet, URL, nil)
 }
 
+// SetAppAccountToken https://developer.apple.com/documentation/appstoreserverapi/set-app-account-tokenAdd
+func (c *StoreClient) SetAppAccountToken(ctx context.Context, originalTransactionId string, body UpdateAppAccountTokenRequest) (statusCode int, err error) {
+	URL := c.hostUrl + PathSetAppAccountToken
+	URL = strings.Replace(URL, "{originalTransactionId}", originalTransactionId, -1)
+
+	bodyBuf := new(bytes.Buffer)
+	err = json.NewEncoder(bodyBuf).Encode(body)
+	if err != nil {
+		return 0, err
+	}
+
+	statusCode, _, err = c.Do(ctx, http.MethodPut, URL, bodyBuf)
+	if err != nil {
+		return statusCode, err
+	}
+	return statusCode, nil
+}
+
 func (c *StoreClient) ParseNotificationV2(tokenStr string) (*jwt.Token, error) {
 	return jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		return c.cert.extractPublicKeyFromToken(tokenStr)
@@ -412,6 +448,49 @@ func (c *StoreClient) ParseNotificationV2WithClaim(tokenStr string) (jwt.Claims,
 		return c.cert.extractPublicKeyFromToken(tokenStr)
 	})
 	return result, err
+}
+
+// ParseSignedPayload parses any signed JWS payload from a server notification into
+// a struct that implements the jwt.Claims interface.
+func (c *StoreClient) ParseSignedPayload(tokenStr string, claims jwt.Claims) error {
+	_, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
+		return c.cert.extractPublicKeyFromToken(tokenStr)
+	})
+
+	return err
+}
+
+// ParseNotificationV2 parses the signedPayload field from an App Store Server Notification response body
+// (https://developer.apple.com/documentation/appstoreservernotifications/responsebodyv2)
+func (c *StoreClient) ParseNotificationV2Payload(signedPayload string) (*NotificationPayload, error) {
+	var result NotificationPayload
+	if err := c.ParseSignedPayload(signedPayload, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// ParseNotificationV2 parses the signedTransactionInfo from decoded notification data
+// (https://developer.apple.com/documentation/appstoreservernotifications/data)
+func (c *StoreClient) ParseNotificationV2TransactionInfo(signedTransactionInfo string) (*JWSTransaction, error) {
+	var result JWSTransaction
+	if err := c.ParseSignedPayload(signedTransactionInfo, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// ParseNotificationV2 parses the signedRenewalInfo from decoded notification data
+// (https://developer.apple.com/documentation/appstoreservernotifications/data)
+func (c *StoreClient) ParseNotificationV2RenewalInfo(signedRenewalInfo string) (*JWSRenewalInfoDecodedPayload, error) {
+	var result JWSRenewalInfoDecodedPayload
+	if err := c.ParseSignedPayload(signedRenewalInfo, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
 
 // ParseSignedTransactions parse the jws singed transactions
@@ -454,43 +533,8 @@ func (c *StoreClient) ParseJWSEncodeString(jwsEncode string) (interface{}, error
 }
 
 func (c *StoreClient) parseJWS(jwsEncode string, claims jwt.Claims) error {
-	rootCertBytes, err := c.cert.extractCertByIndex(jwsEncode, 2)
-	if err != nil {
-		return err
-	}
-	rootCert, err := x509.ParseCertificate(rootCertBytes)
-	if err != nil {
-		return fmt.Errorf("appstore failed to parse root certificate")
-	}
-
-	intermediaCertBytes, err := c.cert.extractCertByIndex(jwsEncode, 1)
-	if err != nil {
-		return err
-	}
-	intermediaCert, err := x509.ParseCertificate(intermediaCertBytes)
-	if err != nil {
-		return fmt.Errorf("appstore failed to parse intermediate certificate")
-	}
-
-	leafCertBytes, err := c.cert.extractCertByIndex(jwsEncode, 0)
-	if err != nil {
-		return err
-	}
-	leafCert, err := x509.ParseCertificate(leafCertBytes)
-	if err != nil {
-		return fmt.Errorf("appstore failed to parse leaf certificate")
-	}
-	if err = c.cert.verifyCert(rootCert, intermediaCert, leafCert); err != nil {
-		return err
-	}
-
-	pk, ok := leafCert.PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return fmt.Errorf("appstore public key must be of type ecdsa.PublicKey")
-	}
-
-	_, err = jwt.ParseWithClaims(jwsEncode, claims, func(token *jwt.Token) (interface{}, error) {
-		return pk, nil
+	_, err := jwt.ParseWithClaims(jwsEncode, claims, func(token *jwt.Token) (interface{}, error) {
+		return c.cert.extractPublicKeyFromToken(jwsEncode)
 	})
 	return err
 }
